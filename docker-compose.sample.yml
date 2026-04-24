@@ -171,6 +171,10 @@ services:
       MYSQL_ROOT_HOST: "${MYSQL5_ROOT_HOST}"
       TZ: "$TZ"
 
+# 高阶示例请参考 docker-compose.cluster.sample.yml：
+# - MySQL 主从：mysql-master / mysql-slave / mysql-replica-init
+# - Redis 集群：redis-cluster-7001 ~ redis-cluster-7006 / redis-cluster-init
+
 #  openresty:
 #    image:  openresty/openresty:${OPENRESTY_VERSION}
 #    container_name: openresty

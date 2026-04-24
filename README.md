@@ -48,6 +48,7 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 # 目录
 - [1.目录结构](#1目录结构)
 - [2.快速使用](#2快速使用)
+    - [2.1 启用 MySQL 主从与 Redis 集群](#21-启用-mysql-主从与-redis-集群)
 - [3.PHP和扩展](#3PHP和扩展)
     - [3.1 切换Nginx使用的PHP版本](#31-切换Nginx使用的PHP版本)
     - [3.2 安装PHP扩展](#32-安装PHP扩展)
@@ -80,16 +81,21 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 │   ├── esdata                  ElasticSearch 数据目录
 │   ├── mongo                   MongoDB 数据目录
 │   ├── mysql                   MySQL8 数据目录
-│   └── mysql5                  MySQL5 数据目录
+│   ├── mysql-master            MySQL 主库数据目录
+│   ├── mysql-slave             MySQL 从库数据目录
+│   ├── mysql5                  MySQL5 数据目录
+│   └── redis-cluster           Redis Cluster 数据目录
 ├── services                    服务构建文件和配置文件目录
 │   ├── elasticsearch           ElasticSearch 配置文件目录
 │   ├── mysql                   MySQL8 配置文件目录
+│   ├── mysql-replication       MySQL 主从配置和初始化脚本目录
 │   ├── mysql5                  MySQL5 配置文件目录
 │   ├── nginx                   Nginx 配置文件目录
 │   ├── php                     PHP5.6 - PHP7.4 配置目录
 │   ├── php54                   PHP5.4 配置目录
 │   └── redis                   Redis 配置目录
 ├── logs                        日志目录
+├── docker-compose.cluster.sample.yml  MySQL 主从 / Redis Cluster 扩展示例文件
 ├── docker-compose.sample.yml   Docker 服务配置示例文件
 ├── env.smaple                  环境配置示例文件
 └── www                         PHP 代码目录
@@ -116,9 +122,29 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
                                                         # Nginx、PHP7和MySQL8。要开启更多其他服务，如Redis、
                                                         # PHP5.6、PHP5.4、MongoDB，ElasticSearch等，请删
                                                         # 除服务块前的注释
+    $ cp docker-compose.cluster.sample.yml docker-compose.cluster.yml
+                                                        # 如需 MySQL 主从和 Redis Cluster，再额外复制扩展编排文件
     $ docker-compose up                                 # 启动
     ```
 #### 5. 在浏览器中访问：`http://localhost`或`https://localhost`(自签名HTTPS演示)就能看到效果，PHP代码在文件`./www/localhost/index.php`。
+
+### 2.1 启用 MySQL 主从与 Redis 集群
+扩展编排文件不会影响默认的 DNMP 服务，只在你显式通过 `-f docker-compose.cluster.yml` 引入时生效。
+
+按需修改 `.env` 中以下变量：
+- `MYSQL_MASTER_*`、`MYSQL_SLAVE_*`、`MYSQL_REPLICATION_*`
+- `REDIS_PASSWORD`、`REDIS_CLUSTER_*`
+
+启动命令示例：
+```bash
+$ docker-compose -f docker-compose.yml -f docker-compose.cluster.yml up -d mysql-master mysql-slave mysql-replica-init
+$ docker-compose -f docker-compose.yml -f docker-compose.cluster.yml up -d redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006 redis-cluster-init
+```
+
+说明：
+1. `mysql-replica-init` 会在主从实例初始化完成后自动建立复制关系。
+2. `redis-cluster-init` 会在 6 个 Redis 节点可用后自动执行 `redis-cli --cluster create`。
+3. 默认 Redis Cluster 优先通告 Docker 网络中的容器 hostname，适合 PHP / 应用容器直连；如果需要宿主机直接作为集群客户端访问，请在 `.env` 中设置 `REDIS_CLUSTER_ANNOUNCE_IP` 为宿主机可访问地址。
 
 
 ## 3.PHP和扩展
@@ -403,6 +429,8 @@ $ docker-compose up                         # 创建并且启动所有容器
 $ docker-compose up -d                      # 创建并且后台运行方式启动所有容器
 $ docker-compose up nginx php mysql         # 创建并且启动nginx、php、mysql的多个容器
 $ docker-compose up -d nginx php  mysql     # 创建并且已后台运行的方式启动nginx、php、mysql容器
+$ docker-compose -f docker-compose.yml -f docker-compose.cluster.yml up -d mysql-master mysql-slave mysql-replica-init
+$ docker-compose -f docker-compose.yml -f docker-compose.cluster.yml up -d redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006 redis-cluster-init
 
 
 $ docker-compose start php                  # 启动服务
@@ -484,7 +512,7 @@ ini_set('display_errors', 'on');
 3. 重启PHP-FPM容器。
 
 ### 5.3 MySQL日志
-因为MySQL容器中的MySQL使用的是`mysql`用户启动，它无法自行在`/var/log`下的增加日志文件。所以，我们把MySQL的日志放在与data一样的目录，即项目的`mysql`目录下，对应容器中的`/var/log/mysql/`目录。
+因为MySQL容器中的MySQL使用的是`mysql`用户启动，它无法自行在`/var/log`下的增加日志文件。所以，我们把MySQL的日志放在宿主机挂载目录中，对应容器中的`/var/log/mysql/`目录。单机模式默认是`./logs/mysql`，主从模式分别是`./logs/mysql-master`和`./logs/mysql-slave`。
 ```bash
 slow-query-log-file     = /var/log/mysql/mysql.slow.log
 log-error               = /var/log/mysql/mysql.error.log
@@ -503,7 +531,7 @@ http://localhost:8080
 ```
 
 MySQL连接信息：
-- host：(本项目的MySQL容器网络)
+- host：`mysql`、`mysql-master` 或 `mysql-slave`（本项目的MySQL容器网络名）
 - port：`3306`
 - username：（手动在phpmyadmin界面输入）
 - password：（手动在phpmyadmin界面输入）
@@ -515,8 +543,8 @@ http://localhost:8081
 ```
 
 Redis连接信息如下：
-- host: (本项目的Redis容器网络)
-- port: `6379`
+- host: `redis` 或 `redis-cluster-7001` ~ `redis-cluster-7006`
+- port: 单机模式为 `6379`，Cluster 模式为 `7001` ~ `7006`
 
 
 ## 7.在正式环境中安全使用
@@ -548,6 +576,19 @@ $dbh = new PDO('mysql:host=mysql;dbname=mysql', 'root', '123456');
 $redis = new Redis();
 $redis->connect('redis', 6379);
 ```
+如果启用了 MySQL 主从和 Redis Cluster，则可以这样连接：
+```php
+// 连接 MySQL 主库 / 从库
+$master = new PDO('mysql:host=mysql-master;dbname=mysql', 'root', '123456');
+$slave = new PDO('mysql:host=mysql-slave;dbname=mysql', 'root', '123456');
+
+// 连接 Redis Cluster
+$cluster = new RedisCluster(NULL, [
+    'redis-cluster-7001:7001',
+    'redis-cluster-7002:7002',
+    'redis-cluster-7003:7003',
+]);
+```
 因为容器与容器是`expose`端口联通的，而且在同一个`networks`下，所以连接的`host`参数直接用容器名称，`port`参数就是容器内部的端口。更多请参考[《docker-compose ports和expose的区别》](https://www.awaimai.com/2138.html)。
 
 第二种情况，**在主机中**通过**命令行**或者**Navicat**等工具连接。主机要连接mysql和redis的话，要求容器必须经过`ports`把端口映射到主机了。以 mysql 为例，`docker-compose.yml`文件中有这样的`ports`配置：`3306:3306`，就是主机的3306和容器的3306端口形成了映射，所以我们可以这样连接：
@@ -556,6 +597,7 @@ $ mysql -h127.0.0.1 -uroot -p123456 -P3306
 $ redis-cli -h127.0.0.1
 ```
 这里`host`参数不能用localhost是因为它默认是通过sock文件与mysql通信，而容器与主机文件系统已经隔离，所以需要通过TCP方式连接，所以需要指定IP。
+如果启用了 MySQL 主从，则主机可以分别连接 `3307`（主库）和 `3308`（从库）。如果启用了 Redis Cluster，建议优先在 Docker 网络内通过容器 hostname 访问；若要在宿主机中直接使用集群客户端，请先设置 `.env` 里的 `REDIS_CLUSTER_ANNOUNCE_IP`，再使用类似 `redis-cli -c -h 127.0.0.1 -p 7001` 的方式连接。
 
 ### 8.5 容器内的php如何连接宿主机MySQL
 1.宿主机执行`ifconfig docker0`得到`inet`就是要连接的`ip`地址
@@ -590,5 +632,3 @@ docker0: flags=4099<UP,BROADCAST,MULTICAST>  mtu 1500
 
 ## License
 MIT
-
-
