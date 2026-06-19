@@ -91,9 +91,11 @@ services:
       REDIS_CLUSTER_PORT: 7001
       REDIS_CLUSTER_BUS_PORT: 17001
       REDIS_CLUSTER_ANNOUNCE_HOSTNAME: redis-cluster-7001
-      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_ANNOUNCE_IP}"
+      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_NODE_1_IP:-172.30.0.11}"
     networks:
-      - default
+      default: {}
+      redis-cluster:
+        ipv4_address: "${REDIS_CLUSTER_NODE_1_IP:-172.30.0.11}"
 
   redis-cluster-7002:
     image: redis:${REDIS_VERSION}
@@ -113,9 +115,11 @@ services:
       REDIS_CLUSTER_PORT: 7002
       REDIS_CLUSTER_BUS_PORT: 17002
       REDIS_CLUSTER_ANNOUNCE_HOSTNAME: redis-cluster-7002
-      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_ANNOUNCE_IP}"
+      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_NODE_2_IP:-172.30.0.12}"
     networks:
-      - default
+      default: {}
+      redis-cluster:
+        ipv4_address: "${REDIS_CLUSTER_NODE_2_IP:-172.30.0.12}"
 
   redis-cluster-7003:
     image: redis:${REDIS_VERSION}
@@ -135,9 +139,11 @@ services:
       REDIS_CLUSTER_PORT: 7003
       REDIS_CLUSTER_BUS_PORT: 17003
       REDIS_CLUSTER_ANNOUNCE_HOSTNAME: redis-cluster-7003
-      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_ANNOUNCE_IP}"
+      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_NODE_3_IP:-172.30.0.13}"
     networks:
-      - default
+      default: {}
+      redis-cluster:
+        ipv4_address: "${REDIS_CLUSTER_NODE_3_IP:-172.30.0.13}"
 
   redis-cluster-7004:
     image: redis:${REDIS_VERSION}
@@ -157,9 +163,11 @@ services:
       REDIS_CLUSTER_PORT: 7004
       REDIS_CLUSTER_BUS_PORT: 17004
       REDIS_CLUSTER_ANNOUNCE_HOSTNAME: redis-cluster-7004
-      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_ANNOUNCE_IP}"
+      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_NODE_4_IP:-172.30.0.14}"
     networks:
-      - default
+      default: {}
+      redis-cluster:
+        ipv4_address: "${REDIS_CLUSTER_NODE_4_IP:-172.30.0.14}"
 
   redis-cluster-7005:
     image: redis:${REDIS_VERSION}
@@ -179,9 +187,11 @@ services:
       REDIS_CLUSTER_PORT: 7005
       REDIS_CLUSTER_BUS_PORT: 17005
       REDIS_CLUSTER_ANNOUNCE_HOSTNAME: redis-cluster-7005
-      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_ANNOUNCE_IP}"
+      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_NODE_5_IP:-172.30.0.15}"
     networks:
-      - default
+      default: {}
+      redis-cluster:
+        ipv4_address: "${REDIS_CLUSTER_NODE_5_IP:-172.30.0.15}"
 
   redis-cluster-7006:
     image: redis:${REDIS_VERSION}
@@ -201,9 +211,11 @@ services:
       REDIS_CLUSTER_PORT: 7006
       REDIS_CLUSTER_BUS_PORT: 17006
       REDIS_CLUSTER_ANNOUNCE_HOSTNAME: redis-cluster-7006
-      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_ANNOUNCE_IP}"
+      REDIS_CLUSTER_ANNOUNCE_IP: "${REDIS_CLUSTER_NODE_6_IP:-172.30.0.16}"
     networks:
-      - default
+      default: {}
+      redis-cluster:
+        ipv4_address: "${REDIS_CLUSTER_NODE_6_IP:-172.30.0.16}"
 
   redis-cluster-init:
     image: redis:${REDIS_VERSION}
@@ -225,4 +237,13 @@ services:
       REDIS_CLUSTER_REPLICAS: "${REDIS_CLUSTER_REPLICAS}"
       REDIS_CLUSTER_NODES: "redis-cluster-7001:7001 redis-cluster-7002:7002 redis-cluster-7003:7003 redis-cluster-7004:7004 redis-cluster-7005:7005 redis-cluster-7006:7006"
     networks:
-      - default
+      default: {}
+      redis-cluster:
+        ipv4_address: "${REDIS_CLUSTER_INIT_IP:-172.30.0.20}"
+
+networks:
+  redis-cluster:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: "${REDIS_CLUSTER_NETWORK_SUBNET:-172.30.0.0/24}"
