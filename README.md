@@ -125,28 +125,35 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
                                                         # 除服务块前的注释
     $ cp docker-compose.cluster.sample.yml docker-compose.cluster.yml
                                                         # 如需 MySQL 主从和 Redis Cluster，再额外复制扩展编排文件
+                                                        # 并在 .env 中启用 COMPOSE_FILE 后可继续使用常规 docker-compose 命令
     $ docker-compose up                                 # 启动
     ```
 #### 5. 在浏览器中访问：`http://localhost`或`https://localhost`(自签名HTTPS演示)就能看到效果，PHP代码在文件`./www/localhost/index.php`。
 
 ### 2.1 启用 MySQL 主从与 Redis 集群
-扩展编排文件不会影响默认的 DNMP 服务，只在你显式通过 `-f docker-compose.cluster.yml` 引入时生效。
+扩展编排文件不会影响默认的 DNMP 服务，只在你显式通过 `-f docker-compose.cluster.yml` 或 `.env` 的 `COMPOSE_FILE` 引入时生效。
 
 按需修改 `.env` 中以下变量：
-- `MYSQL_MASTER_*`、`MYSQL_SLAVE_*`、`MYSQL_REPLICATION_*`
-- `REDIS_PASSWORD`、`REDIS_CLUSTER_*`
+- `COMPOSE_FILE=docker-compose.yml:docker-compose.cluster.yml`：启用后，常规 `docker-compose up -d`、`docker-compose stop`、`docker-compose down` 会同时管理默认服务和扩展服务。Windows 环境可用 `docker-compose.yml;docker-compose.cluster.yml`
+- `MYSQL_REPLICATION_VERSION`、`MYSQL_MASTER_*`、`MYSQL_SLAVE_*`、`MYSQL_REPLICATION_*`
+- `REDIS_VERSION`：单节点 Redis 镜像版本
+- `REDIS_CLUSTER_VERSION`、`REDIS_PASSWORD`、`REDIS_CLUSTER_*_PORT`、`REDIS_CLUSTER_REPLICAS`
 
 启动命令示例：
 ```bash
+$ docker-compose up -d
 $ scripts/restart-mysql-redis.sh
 ```
 
 说明：
 1. `mysql-replica-init` 会在主从实例初始化完成后自动建立复制关系。
 2. `redis-cluster-init` 会在 6 个 Redis 节点可用后自动执行 `redis-cli --cluster create`。
-3. Redis Cluster 使用独立 Docker 网段和固定节点 IP，避免 `nodes.conf` 记录的拓扑随 Docker 网络重建漂移。
-4. 如果本地已有旧 Redis Cluster 数据且出现 `CLUSTERDOWN`，执行 `RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh` 清空本地 Redis Cluster 数据并重新建群。
-5. 如果你在 `docker-compose.yml` 中启用了单节点 `redis`，`scripts/restart-mysql-redis.sh` 会自动一起重启。
+3. `MYSQL_REPLICATION_VERSION` 独立控制主从镜像版本，不影响默认单节点 `mysql` 服务；当前示例使用 MySQL Community Server `9.7.1 LTS`。
+4. `REDIS_CLUSTER_VERSION` 独立控制集群节点镜像版本，不影响默认单节点 `redis` 服务。
+5. `scripts/restart-mysql-redis.sh` 会记录 `data/mysql-replication.version`。如果已有 MySQL 主从数据但版本标记缺失，脚本会拒绝猜测数据版本；请先用匹配现有数据的 `MYSQL_REPLICATION_VERSION` 启动一次并写入标记，或备份后重建本地测试数据。如果版本标记与目标版本不一致，会先停止执行，确认已备份并按官方升级路径处理后，可设置 `ALLOW_MYSQL_REPLICATION_DATA_UPGRADE=1` 继续。MySQL 8.0.34 这类非上一代 LTS 的数据目录不能直接挂载到 9.7.1 容器中升级。
+6. Redis Cluster 会把节点 ID、对外通告地址、端口和总线端口写入各节点的 `nodes.conf`。如果使用 Docker 默认动态 IP，网络重建后容器 IP 可能变化，旧 `nodes.conf`、集群 gossip 或客户端 `MOVED` 重定向仍指向旧地址，就容易出现 `CLUSTERDOWN` 或连接失败。
+7. 当前 Redis Cluster 在扩展编排文件中使用独立 Docker 网段和固定节点 IP，并配置 `cluster-announce-hostname`，让节点通告地址稳定；这些是内部拓扑，不放到 `.env` 的常规配置面。若手工修改扩展编排文件中的网段或节点 IP，应执行 `RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh` 清空本地 Redis Cluster 数据并重新建群。
+8. 如果你在 `docker-compose.yml` 中启用了单节点 `redis`，`scripts/restart-mysql-redis.sh` 会自动一起重启。
 
 
 ## 3.PHP和扩展
@@ -431,6 +438,10 @@ $ docker-compose up                         # 创建并且启动所有容器
 $ docker-compose up -d                      # 创建并且后台运行方式启动所有容器
 $ docker-compose up nginx php mysql         # 创建并且启动nginx、php、mysql的多个容器
 $ docker-compose up -d nginx php  mysql     # 创建并且已后台运行的方式启动nginx、php、mysql容器
+$ docker-compose up -d mysql-master mysql-slave mysql-replica-init
+                                             # .env 启用 COMPOSE_FILE 后启动 MySQL 主从
+$ docker-compose up -d redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006 redis-cluster-init
+                                             # .env 启用 COMPOSE_FILE 后启动 Redis Cluster 节点
 $ scripts/restart-mysql-redis.sh            # 重启 MySQL 主从、单节点 Redis（如已启用）和 Redis Cluster
 $ RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh
                                              # 清空本地 Redis Cluster 数据并重新建群
@@ -438,6 +449,8 @@ $ RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh
 
 $ docker-compose start php                  # 启动服务
 $ docker-compose stop php                   # 停止服务
+$ docker-compose stop mysql-replica-init mysql-master mysql-slave redis-cluster-init redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006
+                                             # .env 启用 COMPOSE_FILE 后停止 MySQL 主从和 Redis Cluster
 $ docker-compose restart php                # 重启服务
 $ docker-compose build php                  # 构建或者重新构建服务
 
@@ -600,7 +613,7 @@ $ mysql -h127.0.0.1 -uroot -p123456 -P3306
 $ redis-cli -h127.0.0.1
 ```
 这里`host`参数不能用localhost是因为它默认是通过sock文件与mysql通信，而容器与主机文件系统已经隔离，所以需要通过TCP方式连接，所以需要指定IP。
-如果启用了 MySQL 主从，则主机可以分别连接 `3307`（主库）和 `3308`（从库）。如果启用了 Redis Cluster，宿主机可通过映射端口访问，例如 `redis-cli -c -h 127.0.0.1 -p 7001`；容器内应用仍建议使用 `redis-cluster-7001:7001` 等容器名访问。
+如果启用了 MySQL 主从，则主机可以分别连接 `3307`（主库）和 `3308`（从库）。如果启用了 Redis Cluster，容器内应用建议使用 `redis-cluster-7001:7001` 等容器名访问。宿主机上的 Cluster 客户端会收到 `redis-cluster-700N` endpoint，并可能读取到 `172.30.0.x` 固定 IP 元数据；需要在 hosts 中把 `redis-cluster-7001` ~ `redis-cluster-7006` 指向 `127.0.0.1`，或使用客户端的地址改写能力，把集群通告地址映射到 `127.0.0.1:7001` 等宿主机端口。
 
 ### 8.5 容器内的php如何连接宿主机MySQL
 1.宿主机执行`ifconfig docker0`得到`inet`就是要连接的`ip`地址
