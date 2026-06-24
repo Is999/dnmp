@@ -1,0 +1,80 @@
+version: "3"
+
+services:
+  kafka:
+    image: apache/kafka:${KAFKA_VERSION}
+    container_name: kafka
+    ports:
+      - "${KAFKA_HOST_PORT}:29092"
+    restart: always
+    environment:
+      TZ: "$TZ"
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,HOST://:29092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,HOST://127.0.0.1:${KAFKA_HOST_PORT}
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,HOST:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_NUM_PARTITIONS: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks:
+      - default
+
+  kafka-connect:
+    image: quay.io/debezium/connect:${DEBEZIUM_CONNECT_VERSION}
+    container_name: kafka-connect
+    depends_on:
+      - kafka
+      - mysql-master
+    ports:
+      - "${KAFKA_CONNECT_HOST_PORT}:8083"
+    restart: always
+    environment:
+      TZ: "$TZ"
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: "${KAFKA_CONNECT_GROUP_ID}"
+      CONFIG_STORAGE_TOPIC: "${KAFKA_CONNECT_CONFIG_TOPIC}"
+      OFFSET_STORAGE_TOPIC: "${KAFKA_CONNECT_OFFSET_TOPIC}"
+      STATUS_STORAGE_TOPIC: "${KAFKA_CONNECT_STATUS_TOPIC}"
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+      KEY_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
+      CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/connectors >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks:
+      - default
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:${KAFKA_UI_VERSION}
+    container_name: kafka-ui
+    depends_on:
+      - kafka
+      - kafka-connect
+    ports:
+      - "${KAFKA_UI_HOST_PORT}:8080"
+    restart: always
+    environment:
+      TZ: "$TZ"
+      KAFKA_CLUSTERS_0_NAME: dnmp
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium
+      KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
+    networks:
+      - default

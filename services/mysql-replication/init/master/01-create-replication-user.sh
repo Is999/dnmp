@@ -10,6 +10,6 @@ replication_password="$(sql_string "${MYSQL_REPLICATION_PASSWORD}")"
 
 mysql -uroot -p"${MYSQL_ROOT_PASSWORD}" <<-EOSQL
 CREATE USER IF NOT EXISTS '${replication_user}'@'%' IDENTIFIED BY '${replication_password}';
-GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO '${replication_user}'@'%';
+GRANT SELECT, RELOAD, SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO '${replication_user}'@'%';
 FLUSH PRIVILEGES;
 EOSQL

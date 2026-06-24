@@ -49,6 +49,7 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 - [1.目录结构](#1目录结构)
 - [2.快速使用](#2快速使用)
     - [2.1 启用 MySQL 主从与 Redis 集群](#21-启用-mysql-主从与-redis-集群)
+    - [2.2 启用 CDC 与可观测性扩展](#22-启用-cdc-与可观测性扩展)
 - [3.PHP和扩展](#3PHP和扩展)
     - [3.1 切换Nginx使用的PHP版本](#31-切换Nginx使用的PHP版本)
     - [3.2 安装PHP扩展](#32-安装PHP扩展)
@@ -87,6 +88,7 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 │   └── redis-cluster           Redis Cluster 数据目录
 ├── services                    服务构建文件和配置文件目录
 │   ├── elasticsearch           ElasticSearch 配置文件目录
+│   ├── debezium                Debezium Connector 示例配置目录
 │   ├── mysql                   MySQL8 配置文件目录
 │   ├── mysql-replication       MySQL 主从配置和初始化脚本目录
 │   ├── mysql5                  MySQL5 配置文件目录
@@ -97,6 +99,8 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 ├── logs                        日志目录
 ├── scripts                     本地运维脚本目录
 ├── docker-compose.cluster.sample.yml  MySQL 主从 / Redis Cluster 扩展示例文件
+├── docker-compose.cdc.sample.yml      Kafka / Kafka Connect / Debezium 扩展示例文件
+├── docker-compose.observability.sample.yml  Jaeger OTLP 扩展示例文件
 ├── docker-compose.sample.yml   Docker 服务配置示例文件
 ├── env.smaple                  环境配置示例文件
 └── www                         PHP 代码目录
@@ -126,6 +130,10 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
     $ cp docker-compose.cluster.sample.yml docker-compose.cluster.yml
                                                         # 如需 MySQL 主从和 Redis Cluster，再额外复制扩展编排文件
                                                         # 并在 .env 中启用 COMPOSE_FILE 后可继续使用常规 docker-compose 命令
+    $ cp docker-compose.cdc.sample.yml docker-compose.cdc.yml
+                                                        # 如需本地 MySQL binlog -> Debezium -> Kafka 测试，再复制 CDC 扩展编排文件
+    $ cp docker-compose.observability.sample.yml docker-compose.observability.yml
+                                                        # 如需本地 OTLP trace 查看，再复制可观测性扩展编排文件
     $ docker-compose up                                 # 启动
     ```
 #### 5. 在浏览器中访问：`http://localhost`或`https://localhost`(自签名HTTPS演示)就能看到效果，PHP代码在文件`./www/localhost/index.php`。
@@ -155,6 +163,58 @@ $ scripts/restart-mysql-redis.sh
 7. 当前 Redis Cluster 在扩展编排文件中使用独立 Docker 网段和固定节点 IP，并配置 `cluster-announce-hostname`，让节点通告地址稳定；这些是内部拓扑，不放到 `.env` 的常规配置面。若手工修改扩展编排文件中的网段或节点 IP，应执行 `RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh` 清空本地 Redis Cluster 数据并重新建群。
 8. 如果你在 `docker-compose.yml` 中启用了单节点 `redis`，`scripts/restart-mysql-redis.sh` 会自动一起重启。
 
+### 2.2 启用 CDC 与可观测性扩展
+CDC 与可观测性扩展不会影响默认 DNMP 服务，只在你显式通过 `-f docker-compose.cdc.yml`、`-f docker-compose.observability.yml` 或 `.env` 的 `COMPOSE_FILE` 引入时生效。
+
+本地 CDC 使用 `mysql-master` 作为 binlog 来源。默认单节点 `mysql` 配置中关闭了 binlog，不作为 Debezium 数据源。
+
+按需复制扩展编排文件：
+```bash
+$ cp docker-compose.cluster.sample.yml docker-compose.cluster.yml
+$ cp docker-compose.cdc.sample.yml docker-compose.cdc.yml
+$ cp docker-compose.observability.sample.yml docker-compose.observability.yml
+```
+
+按需修改 `.env` 中以下变量：
+- `COMPOSE_FILE=docker-compose.yml:docker-compose.cluster.yml:docker-compose.cdc.yml:docker-compose.observability.yml`：启用 MySQL 主从、Kafka、Kafka Connect、Debezium、Kafka UI 和 Jaeger。Windows 环境可用分号分隔。
+- `KAFKA_VERSION`、`KAFKA_HOST_PORT`
+- `DEBEZIUM_CONNECT_VERSION`、`KAFKA_CONNECT_*`：Debezium 3.x 镜像使用 `quay.io/debezium/connect`。
+- `KAFKA_UI_VERSION`、`KAFKA_UI_HOST_PORT`
+- `JAEGER_VERSION`、`JAEGER_OTLP_*`、`JAEGER_UI_HOST_PORT`
+
+启动命令示例：
+```bash
+$ docker-compose up -d mysql-master mysql-slave mysql-replica-init kafka kafka-connect kafka-ui jaeger
+```
+
+注册 Debezium Connector：
+```bash
+$ curl -i -X POST \
+  -H 'Content-Type: application/json' \
+  --data @services/debezium/connectors/admin-mysql-source.json \
+  http://127.0.0.1:8083/connectors
+```
+
+常用检查：
+```bash
+$ curl http://127.0.0.1:8083/connectors
+$ curl http://127.0.0.1:8083/connectors/admin-mysql-source/status
+```
+
+本地访问入口：
+- Kafka Connect：`http://127.0.0.1:8083`
+- Kafka UI：`http://127.0.0.1:8088`
+- Jaeger UI：`http://127.0.0.1:16686`
+- OTLP gRPC：`127.0.0.1:4317`
+- OTLP HTTP：`127.0.0.1:4318`
+
+说明：
+1. `services/debezium/connectors/admin-mysql-source.json` 只是本地开发示例，请按实际库名、表名和账号密码修改 `database.include.list`、`table.include.list`、`database.user`、`database.password`。
+2. `mysql-master` 初始化脚本会给 `MYSQL_REPLICATION_USER` 授予 Debezium 本地快照所需的 `SELECT`、`RELOAD`、`SHOW DATABASES`、`REPLICATION SLAVE`、`REPLICATION CLIENT` 权限。
+3. 本地 Kafka 默认分区数为 1，避免 Debezium schema history topic 和 Kafka Connect config topic 自动创建成多分区。
+4. `www/admin/etc/config.dnmp.sample.yaml` 中 Kafka 宿主机访问地址为 `127.0.0.1:29092`；如果 admin 在容器内运行，应改为 `kafka:9092`。
+5. 启用 admin trace 时，`www/admin/etc/config.dnmp.sample.yaml` 的 OTLP 宿主机访问地址可填 `127.0.0.1:4317`；如果 admin 在容器内运行，应填 `jaeger:4317`。
+6. `observability.otlp_endpoint` 属于启动期连接配置，修改后需要重启 admin。
 
 ## 3.PHP和扩展
 ### 3.1 切换Nginx使用的PHP版本

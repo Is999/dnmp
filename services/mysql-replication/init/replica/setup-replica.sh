@@ -74,7 +74,7 @@ ensure_replication_user() {
   mysql -h"${master_host}" -P"${master_port}" -uroot -p"${MYSQL_MASTER_ROOT_PASSWORD}" <<-EOSQL
 CREATE USER IF NOT EXISTS '${replication_user_sql}'@'%' IDENTIFIED BY '${replication_password_sql}';
 ALTER USER '${replication_user_sql}'@'%' IDENTIFIED BY '${replication_password_sql}';
-GRANT REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO '${replication_user_sql}'@'%';
+GRANT SELECT, RELOAD, SHOW DATABASES, REPLICATION SLAVE, REPLICATION CLIENT ON *.* TO '${replication_user_sql}'@'%';
 FLUSH PRIVILEGES;
 EOSQL
 }
