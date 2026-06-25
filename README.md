@@ -1,7 +1,5 @@
 DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + MongoDB + RabbitMQ）是一款全功能的**LNMP一键安装程序，支持Arm CPU**。
 
-> 找远程工作，推荐[远程岛](https://yuanchengdao.com/)。
-
 
 <details>
 <summary>项目地址</summary>
@@ -111,7 +109,7 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 ### 1. 本地安装
     - `git`
     - `Docker`(系统需为Linux，Windows 10 Build 15063+，或MacOS 10.12+，且必须要`64`位）
-    - `docker-compose 1.7.0+`
+    - `Docker Compose`（推荐 `docker compose`，旧版 `docker-compose` 仍可按需替换）
 ### 2. `clone`项目：
     ```
     $ git clone https://github.com/yeszao/dnmp.git
@@ -124,18 +122,18 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
     ```
     $ cd dnmp                                           # 进入项目目录
     $ cp env.sample .env                                # 复制环境变量文件。note:安装php扩展请查看文档中的3.2小节
-    $ cp docker-compose.sample.yml docker-compose.yml   # 复制 docker-compose 配置文件。默认启动3个服务：
+    $ cp docker-compose.sample.yml docker-compose.yml   # 复制 Docker Compose 配置文件。默认启动3个服务：
                                                         # Nginx、PHP7和MySQL8。要开启更多其他服务，如Redis、
                                                         # PHP5.6、PHP5.4、MongoDB，ElasticSearch等，请删
                                                         # 除服务块前的注释
     $ cp docker-compose.mysql-redis.sample.yml docker-compose.mysql-redis.yml
                                                         # 如需 MySQL 主从和 Redis Cluster，再额外复制扩展编排文件
-                                                        # 并在 .env 中启用 COMPOSE_FILE 后可继续使用常规 docker-compose 命令
+                                                        # 并在 .env 中启用 COMPOSE_FILE 后可继续使用常规 Docker Compose 命令
     $ cp docker-compose.cdc.sample.yml docker-compose.cdc.yml
                                                         # 如需本地 MySQL binlog -> Debezium -> Kafka 测试，再复制 CDC 扩展编排文件
     $ cp docker-compose.observability.sample.yml docker-compose.observability.yml
                                                         # 如需本地 OTLP trace 查看，再复制可观测性扩展编排文件
-    $ docker-compose up                                 # 启动
+    $ docker compose up                                 # 启动
     ```
 #### 5. 在浏览器中访问：`http://localhost`或`https://localhost`(自签名HTTPS演示)就能看到效果，PHP代码在文件`./www/localhost/index.php`。
 
@@ -143,7 +141,7 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 扩展编排文件不会影响默认的 DNMP 服务，只在你显式通过 `-f docker-compose.mysql-redis.yml` 或 `.env` 的 `COMPOSE_FILE` 引入时生效。
 
 按需修改 `.env` 中以下变量：
-- `COMPOSE_FILE=docker-compose.yml:docker-compose.mysql-redis.yml`：启用后，常规 `docker-compose up -d`、`docker-compose stop`、`docker-compose down` 会同时管理默认服务和扩展服务。Windows 环境可用 `docker-compose.yml;docker-compose.mysql-redis.yml`
+- `COMPOSE_FILE=docker-compose.yml:docker-compose.mysql-redis.yml`：启用后，常规 `docker compose up -d`、`docker compose stop`、`docker compose down` 会同时管理默认服务和扩展服务。Windows 环境可用 `docker-compose.yml;docker-compose.mysql-redis.yml`
 - `DNMP_EXT_HOST_IP`：扩展服务宿主机监听地址，默认 `127.0.0.1`，避免 MySQL 主从和 Redis Cluster 端口直接暴露到局域网。
 - `MYSQL_REPLICATION_VERSION`、`MYSQL_PRIMARY_*`、`MYSQL_REPLICA_*`、`MYSQL_REPLICATION_*`
 - `REDIS_VERSION`：单节点 Redis 镜像版本
@@ -151,7 +149,6 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 
 启动命令示例：
 ```bash
-$ docker-compose up -d
 $ scripts/restart-mysql-redis.sh
 ```
 
@@ -162,7 +159,7 @@ $ scripts/restart-mysql-redis.sh
 4. `MYSQL_REPLICATION_VERSION` 独立控制主从镜像版本，不影响默认单节点 `mysql` 服务；当前示例使用 MySQL Community Server `9.7.1 LTS`。
 5. `REDIS_CLUSTER_VERSION` 独立控制集群节点镜像版本，不影响默认单节点 `redis` 服务。
 6. `scripts/restart-mysql-redis.sh` 会记录 `data/mysql-replication.version`。如果已有 MySQL 主从数据但版本标记缺失，脚本会拒绝猜测数据版本；请先用匹配现有数据的 `MYSQL_REPLICATION_VERSION` 启动一次并写入标记，或备份后重建本地测试数据。如果版本标记与目标版本不一致，会先停止执行，确认已备份并按官方升级路径处理后，可设置 `ALLOW_MYSQL_REPLICATION_DATA_UPGRADE=1` 继续。MySQL 8.0.34 这类非上一代 LTS 的数据目录不能直接挂载到 9.7.1 容器中升级。
-7. 如果旧版本已生成旧命名的 MySQL 复制数据目录，`scripts/restart-mysql-redis.sh` 会拒绝静默启动新空目录；请先备份并迁移到 `data/mysql-primary`、`data/mysql-replica`，或备份后重建本地测试数据。
+7. 如果旧版本已生成旧命名的 MySQL 复制数据目录，`scripts/restart-mysql-redis.sh` 会拒绝静默启动新空目录；请先备份并迁移到 `data/mysql-primary`、`data/mysql-replica`，或备份后重建本地测试数据。迁移完成前不要先执行普通 `docker compose up -d`，避免提前创建新的空数据目录。
 8. Redis Cluster 会把节点 ID、对外通告地址、端口和总线端口写入各节点的 `nodes.conf`。如果使用 Docker 默认动态 IP，网络重建后容器 IP 可能变化，旧 `nodes.conf`、集群 gossip 或客户端 `MOVED` 重定向仍指向旧地址，就容易出现 `CLUSTERDOWN` 或连接失败。
 9. 当前 Redis Cluster 在扩展编排文件中使用独立 Docker 网段和固定节点 IP，并配置 `cluster-announce-hostname`，让节点通告地址稳定；这些是内部拓扑，不放到 `.env` 的常规配置面。若手工修改扩展编排文件中的网段或节点 IP，应执行 `RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh` 清空本地 Redis Cluster 数据并重新建群。
 10. 如果你在 `docker-compose.yml` 中启用了单节点 `redis`，`scripts/restart-mysql-redis.sh` 会自动一起重启。
@@ -190,9 +187,8 @@ $ cp docker-compose.observability.sample.yml docker-compose.observability.yml
 
 启动命令示例：
 ```bash
-$ docker-compose up -d mysql-primary mysql-replica
-$ docker-compose up mysql-replication-init   # 等待主从复制和 CDC MySQL 账号初始化完成
-$ docker-compose up -d kafka kafka-connect kafka-ui jaeger
+$ scripts/restart-mysql-redis.sh
+$ docker compose up -d kafka kafka-connect kafka-ui jaeger
 ```
 
 注册 Debezium Connector：
@@ -260,7 +256,7 @@ PHP54_EXTENSIONS=opcache,redis                 # PHP 5.4要安装的扩展列表
 ```
 然后重新build PHP镜像。
 ```bash
-docker-compose build php
+docker compose build php
 ```
 可用的扩展请看同文件的`env.sample`注释块说明。
 
@@ -506,32 +502,30 @@ composer update
 ### 4.1 服务器启动和构建命令
 如需管理服务，请在命令后面加上服务器名称，例如：
 ```bash
-$ docker-compose up                         # 创建并且启动所有容器
-$ docker-compose up -d                      # 创建并且后台运行方式启动所有容器
-$ docker-compose up nginx php mysql         # 创建并且启动nginx、php、mysql的多个容器
-$ docker-compose up -d nginx php  mysql     # 创建并且已后台运行的方式启动nginx、php、mysql容器
-$ docker-compose up -d mysql-primary mysql-replica
-$ docker-compose up mysql-replication-init   # .env 启用 COMPOSE_FILE 后启动 MySQL 主从，并等待复制初始化完成
-$ docker-compose up -d redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006
-$ docker-compose up redis-cluster-init       # .env 启用 COMPOSE_FILE 后启动 Redis Cluster 节点，并等待建群完成
-$ docker-compose up -d kafka kafka-connect kafka-ui jaeger
-                                             # .env 启用 COMPOSE_FILE 后启动 CDC 与可观测性扩展
+$ docker compose up                         # 创建并且启动所有容器
+$ docker compose up -d                      # 创建并且后台运行方式启动所有容器
+$ docker compose up nginx php mysql         # 创建并且启动nginx、php、mysql的多个容器
+$ docker compose up -d nginx php mysql      # 创建并且已后台运行的方式启动nginx、php、mysql容器
+
+# 扩展服务命令统一使用 docker compose；MySQL 主从和 Redis Cluster 走脚本入口，避免绕过初始化闭环。
 $ scripts/restart-mysql-redis.sh            # 一键重启 MySQL 主从、单节点 Redis（如已启用）和 Redis Cluster，并等待初始化完成
 $ RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh
                                              # 清空本地 Redis Cluster 数据并重新建群
+$ docker compose up -d kafka kafka-connect kafka-ui jaeger
+                                             # .env 启用 COMPOSE_FILE 后启动 CDC 与可观测性扩展
 
 
-$ docker-compose start php                  # 启动服务
-$ docker-compose stop php                   # 停止服务
-$ docker-compose stop mysql-replication-init mysql-primary mysql-replica redis-cluster-init redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006
-                                             # .env 启用 COMPOSE_FILE 后停止 MySQL 主从和 Redis Cluster
-$ docker-compose stop kafka-ui kafka-connect kafka jaeger
+$ docker compose start php                  # 启动服务
+$ docker compose stop php                   # 停止服务
+$ docker compose stop mysql-primary mysql-replica redis redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006
+                                             # .env 启用 COMPOSE_FILE 后停止 MySQL 主从、单节点 Redis（如已启用）和 Redis Cluster
+$ docker compose stop kafka-ui kafka-connect kafka jaeger
                                              # .env 启用 COMPOSE_FILE 后停止 CDC 与可观测性扩展
-$ docker-compose restart php                # 重启服务
-$ docker-compose build php                  # 构建或者重新构建服务
+$ docker compose restart php                # 重启服务
+$ docker compose build php                  # 构建或者重新构建服务
 
-$ docker-compose rm php                     # 删除并且停止php容器
-$ docker-compose down                       # 停止并删除容器，网络，图像和挂载卷
+$ docker compose rm php                     # 删除并且停止php容器
+$ docker compose down                       # 停止并删除容器，网络，图像和挂载卷
 ```
 
 ### 4.2 添加快捷命令
