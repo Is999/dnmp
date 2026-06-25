@@ -5,14 +5,17 @@ services:
     image: apache/kafka:${KAFKA_VERSION}
     container_name: kafka
     ports:
-      - "${KAFKA_HOST_PORT}:29092"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${KAFKA_HOST_PORT}:29092"
+    volumes:
+      - ${DATA_DIR}/kafka:/var/lib/kafka/data:rw
     restart: always
     environment:
       TZ: "$TZ"
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,HOST://:29092
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,HOST://127.0.0.1:${KAFKA_HOST_PORT}
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,HOST://${KAFKA_HOST_ADVERTISED_HOST:-127.0.0.1}:${KAFKA_HOST_PORT}
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,HOST:PLAINTEXT
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
@@ -35,9 +38,8 @@ services:
     container_name: kafka-connect
     depends_on:
       - kafka
-      - mysql-master
     ports:
-      - "${KAFKA_CONNECT_HOST_PORT}:8083"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${KAFKA_CONNECT_HOST_PORT}:8083"
     restart: always
     environment:
       TZ: "$TZ"
@@ -68,7 +70,7 @@ services:
       - kafka
       - kafka-connect
     ports:
-      - "${KAFKA_UI_HOST_PORT}:8080"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${KAFKA_UI_HOST_PORT}:8080"
     restart: always
     environment:
       TZ: "$TZ"

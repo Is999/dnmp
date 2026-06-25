@@ -21,7 +21,8 @@ gtid_mode               = ON
 enforce_gtid_consistency = ON
 log_replica_updates     = ON
 read_only               = ON
-report_host             = mysql-slave
+super_read_only         = ON
+report_host             = mysql-replica
 
 explicit_defaults_for_timestamp
 

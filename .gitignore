@@ -4,7 +4,13 @@
 nohup.out
 docker-compose.yml
 docker-compose.yml.*
+docker-compose.mysql-redis.yml
+docker-compose.cdc.yml
+docker-compose.observability.yml
 www/*
 !www/localhost/
 logs/*
 data/mysql-replication.version
+data/mysql-*/*
+!data/mysql-primary/.gitignore
+!data/mysql-replica/.gitignore

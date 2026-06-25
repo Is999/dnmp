@@ -1,22 +1,24 @@
 version: "3"
 
 services:
-  mysql-master:
+  mysql-primary:
     image: mysql:${MYSQL_REPLICATION_VERSION}
-    container_name: mysql-master
+    container_name: mysql-primary
     ports:
-      - "${MYSQL_MASTER_HOST_PORT}:3306"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${MYSQL_PRIMARY_HOST_PORT}:3306"
     volumes:
-      - ${MYSQL_MASTER_CONF_FILE}:/etc/mysql/conf.d/mysql.cnf:ro
-      - ${DATA_DIR}/mysql-master:/var/lib/mysql/:rw
-      - ${MYSQL_MASTER_LOG_DIR}:/var/log/mysql/:rw
-      - ./services/mysql-replication/init/master:/docker-entrypoint-initdb.d:ro
+      - ${MYSQL_PRIMARY_CONF_FILE}:/etc/mysql/conf.d/mysql.cnf:ro
+      - ${DATA_DIR}/mysql-primary:/var/lib/mysql/:rw
+      - ${MYSQL_PRIMARY_LOG_DIR}:/var/log/mysql/:rw
+      - ./services/mysql-replication/init/primary:/docker-entrypoint-initdb.d:ro
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: "${MYSQL_MASTER_ROOT_PASSWORD}"
-      MYSQL_ROOT_HOST: "${MYSQL_MASTER_ROOT_HOST}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_PRIMARY_ROOT_PASSWORD}"
+      MYSQL_ROOT_HOST: "${MYSQL_PRIMARY_ROOT_HOST}"
       MYSQL_REPLICATION_USER: "${MYSQL_REPLICATION_USER}"
       MYSQL_REPLICATION_PASSWORD: "${MYSQL_REPLICATION_PASSWORD}"
+      MYSQL_DEBEZIUM_USER: "${MYSQL_DEBEZIUM_USER:-}"
+      MYSQL_DEBEZIUM_PASSWORD: "${MYSQL_DEBEZIUM_PASSWORD:-}"
       TZ: "$TZ"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} -h 127.0.0.1 --silent"]
@@ -26,21 +28,21 @@ services:
     networks:
       - default
 
-  mysql-slave:
+  mysql-replica:
     image: mysql:${MYSQL_REPLICATION_VERSION}
-    container_name: mysql-slave
+    container_name: mysql-replica
     depends_on:
-      - mysql-master
+      - mysql-primary
     ports:
-      - "${MYSQL_SLAVE_HOST_PORT}:3306"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${MYSQL_REPLICA_HOST_PORT}:3306"
     volumes:
-      - ${MYSQL_SLAVE_CONF_FILE}:/etc/mysql/conf.d/mysql.cnf:ro
-      - ${DATA_DIR}/mysql-slave:/var/lib/mysql/:rw
-      - ${MYSQL_SLAVE_LOG_DIR}:/var/log/mysql/:rw
+      - ${MYSQL_REPLICA_CONF_FILE}:/etc/mysql/conf.d/mysql.cnf:ro
+      - ${DATA_DIR}/mysql-replica:/var/lib/mysql/:rw
+      - ${MYSQL_REPLICA_LOG_DIR}:/var/log/mysql/:rw
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: "${MYSQL_SLAVE_ROOT_PASSWORD}"
-      MYSQL_ROOT_HOST: "${MYSQL_SLAVE_ROOT_HOST}"
+      MYSQL_ROOT_PASSWORD: "${MYSQL_REPLICA_ROOT_PASSWORD}"
+      MYSQL_ROOT_HOST: "${MYSQL_REPLICA_ROOT_HOST}"
       TZ: "$TZ"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} -h 127.0.0.1 --silent"]
@@ -50,25 +52,27 @@ services:
     networks:
       - default
 
-  mysql-replica-init:
+  mysql-replication-init:
     image: mysql:${MYSQL_REPLICATION_VERSION}
-    container_name: mysql-replica-init
+    container_name: mysql-replication-init
     depends_on:
-      - mysql-master
-      - mysql-slave
+      - mysql-primary
+      - mysql-replica
     volumes:
-      - ./services/mysql-replication/init/replica/setup-replica.sh:/usr/local/bin/setup-replica.sh:ro
-    entrypoint: ["/bin/sh", "/usr/local/bin/setup-replica.sh"]
+      - ./services/mysql-replication/init/replica/setup-replication.sh:/usr/local/bin/setup-replication.sh:ro
+    entrypoint: ["/bin/sh", "/usr/local/bin/setup-replication.sh"]
     restart: "no"
     environment:
-      MYSQL_MASTER_HOST: mysql-master
-      MYSQL_MASTER_PORT: 3306
-      MYSQL_MASTER_ROOT_PASSWORD: "${MYSQL_MASTER_ROOT_PASSWORD}"
-      MYSQL_SLAVE_HOST: mysql-slave
-      MYSQL_SLAVE_PORT: 3306
-      MYSQL_SLAVE_ROOT_PASSWORD: "${MYSQL_SLAVE_ROOT_PASSWORD}"
+      MYSQL_PRIMARY_HOST: mysql-primary
+      MYSQL_PRIMARY_PORT: 3306
+      MYSQL_PRIMARY_ROOT_PASSWORD: "${MYSQL_PRIMARY_ROOT_PASSWORD}"
+      MYSQL_REPLICA_HOST: mysql-replica
+      MYSQL_REPLICA_PORT: 3306
+      MYSQL_REPLICA_ROOT_PASSWORD: "${MYSQL_REPLICA_ROOT_PASSWORD}"
       MYSQL_REPLICATION_USER: "${MYSQL_REPLICATION_USER}"
       MYSQL_REPLICATION_PASSWORD: "${MYSQL_REPLICATION_PASSWORD}"
+      MYSQL_DEBEZIUM_USER: "${MYSQL_DEBEZIUM_USER:-}"
+      MYSQL_DEBEZIUM_PASSWORD: "${MYSQL_DEBEZIUM_PASSWORD:-}"
       TZ: "$TZ"
     networks:
       - default
@@ -77,8 +81,8 @@ services:
     image: redis:${REDIS_CLUSTER_VERSION}
     container_name: redis-cluster-7001
     ports:
-      - "${REDIS_CLUSTER_NODE_1_PORT}:7001"
-      - "${REDIS_CLUSTER_NODE_1_BUS_PORT}:17001"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_1_PORT}:7001"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_1_BUS_PORT}:17001"
     volumes:
       - ${REDIS_CLUSTER_BASE_CONF_FILE}:/usr/local/etc/redis/redis-cluster-base.conf:ro
       - ./services/redis/cluster/start-node.sh:/usr/local/bin/start-node.sh:ro
@@ -101,8 +105,8 @@ services:
     image: redis:${REDIS_CLUSTER_VERSION}
     container_name: redis-cluster-7002
     ports:
-      - "${REDIS_CLUSTER_NODE_2_PORT}:7002"
-      - "${REDIS_CLUSTER_NODE_2_BUS_PORT}:17002"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_2_PORT}:7002"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_2_BUS_PORT}:17002"
     volumes:
       - ${REDIS_CLUSTER_BASE_CONF_FILE}:/usr/local/etc/redis/redis-cluster-base.conf:ro
       - ./services/redis/cluster/start-node.sh:/usr/local/bin/start-node.sh:ro
@@ -125,8 +129,8 @@ services:
     image: redis:${REDIS_CLUSTER_VERSION}
     container_name: redis-cluster-7003
     ports:
-      - "${REDIS_CLUSTER_NODE_3_PORT}:7003"
-      - "${REDIS_CLUSTER_NODE_3_BUS_PORT}:17003"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_3_PORT}:7003"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_3_BUS_PORT}:17003"
     volumes:
       - ${REDIS_CLUSTER_BASE_CONF_FILE}:/usr/local/etc/redis/redis-cluster-base.conf:ro
       - ./services/redis/cluster/start-node.sh:/usr/local/bin/start-node.sh:ro
@@ -149,8 +153,8 @@ services:
     image: redis:${REDIS_CLUSTER_VERSION}
     container_name: redis-cluster-7004
     ports:
-      - "${REDIS_CLUSTER_NODE_4_PORT}:7004"
-      - "${REDIS_CLUSTER_NODE_4_BUS_PORT}:17004"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_4_PORT}:7004"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_4_BUS_PORT}:17004"
     volumes:
       - ${REDIS_CLUSTER_BASE_CONF_FILE}:/usr/local/etc/redis/redis-cluster-base.conf:ro
       - ./services/redis/cluster/start-node.sh:/usr/local/bin/start-node.sh:ro
@@ -173,8 +177,8 @@ services:
     image: redis:${REDIS_CLUSTER_VERSION}
     container_name: redis-cluster-7005
     ports:
-      - "${REDIS_CLUSTER_NODE_5_PORT}:7005"
-      - "${REDIS_CLUSTER_NODE_5_BUS_PORT}:17005"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_5_PORT}:7005"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_5_BUS_PORT}:17005"
     volumes:
       - ${REDIS_CLUSTER_BASE_CONF_FILE}:/usr/local/etc/redis/redis-cluster-base.conf:ro
       - ./services/redis/cluster/start-node.sh:/usr/local/bin/start-node.sh:ro
@@ -197,8 +201,8 @@ services:
     image: redis:${REDIS_CLUSTER_VERSION}
     container_name: redis-cluster-7006
     ports:
-      - "${REDIS_CLUSTER_NODE_6_PORT}:7006"
-      - "${REDIS_CLUSTER_NODE_6_BUS_PORT}:17006"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_6_PORT}:7006"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${REDIS_CLUSTER_NODE_6_BUS_PORT}:17006"
     volumes:
       - ${REDIS_CLUSTER_BASE_CONF_FILE}:/usr/local/etc/redis/redis-cluster-base.conf:ro
       - ./services/redis/cluster/start-node.sh:/usr/local/bin/start-node.sh:ro

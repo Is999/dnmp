@@ -82,8 +82,9 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 │   ├── esdata                  ElasticSearch 数据目录
 │   ├── mongo                   MongoDB 数据目录
 │   ├── mysql                   MySQL8 数据目录
-│   ├── mysql-master            MySQL 主库数据目录
-│   ├── mysql-slave             MySQL 从库数据目录
+│   ├── mysql-primary           MySQL 主库数据目录
+│   ├── mysql-replica           MySQL 从库数据目录
+│   ├── kafka                   Kafka KRaft 数据目录
 │   ├── mysql5                  MySQL5 数据目录
 │   └── redis-cluster           Redis Cluster 数据目录
 ├── services                    服务构建文件和配置文件目录
@@ -98,11 +99,11 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 │   └── redis                   Redis 配置目录
 ├── logs                        日志目录
 ├── scripts                     本地运维脚本目录
-├── docker-compose.cluster.sample.yml  MySQL 主从 / Redis Cluster 扩展示例文件
+├── docker-compose.mysql-redis.sample.yml  MySQL 主从 / Redis Cluster 扩展示例文件
 ├── docker-compose.cdc.sample.yml      Kafka / Kafka Connect / Debezium 扩展示例文件
 ├── docker-compose.observability.sample.yml  Jaeger OTLP 扩展示例文件
 ├── docker-compose.sample.yml   Docker 服务配置示例文件
-├── env.smaple                  环境配置示例文件
+├── env.sample                  环境配置示例文件
 └── www                         PHP 代码目录
 ```
 
@@ -127,7 +128,7 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
                                                         # Nginx、PHP7和MySQL8。要开启更多其他服务，如Redis、
                                                         # PHP5.6、PHP5.4、MongoDB，ElasticSearch等，请删
                                                         # 除服务块前的注释
-    $ cp docker-compose.cluster.sample.yml docker-compose.cluster.yml
+    $ cp docker-compose.mysql-redis.sample.yml docker-compose.mysql-redis.yml
                                                         # 如需 MySQL 主从和 Redis Cluster，再额外复制扩展编排文件
                                                         # 并在 .env 中启用 COMPOSE_FILE 后可继续使用常规 docker-compose 命令
     $ cp docker-compose.cdc.sample.yml docker-compose.cdc.yml
@@ -139,11 +140,12 @@ DNMP（Docker + Nginx/Openresty + MySQL5,8 + PHP5,7,8 + Redis + ElasticSearch + 
 #### 5. 在浏览器中访问：`http://localhost`或`https://localhost`(自签名HTTPS演示)就能看到效果，PHP代码在文件`./www/localhost/index.php`。
 
 ### 2.1 启用 MySQL 主从与 Redis 集群
-扩展编排文件不会影响默认的 DNMP 服务，只在你显式通过 `-f docker-compose.cluster.yml` 或 `.env` 的 `COMPOSE_FILE` 引入时生效。
+扩展编排文件不会影响默认的 DNMP 服务，只在你显式通过 `-f docker-compose.mysql-redis.yml` 或 `.env` 的 `COMPOSE_FILE` 引入时生效。
 
 按需修改 `.env` 中以下变量：
-- `COMPOSE_FILE=docker-compose.yml:docker-compose.cluster.yml`：启用后，常规 `docker-compose up -d`、`docker-compose stop`、`docker-compose down` 会同时管理默认服务和扩展服务。Windows 环境可用 `docker-compose.yml;docker-compose.cluster.yml`
-- `MYSQL_REPLICATION_VERSION`、`MYSQL_MASTER_*`、`MYSQL_SLAVE_*`、`MYSQL_REPLICATION_*`
+- `COMPOSE_FILE=docker-compose.yml:docker-compose.mysql-redis.yml`：启用后，常规 `docker-compose up -d`、`docker-compose stop`、`docker-compose down` 会同时管理默认服务和扩展服务。Windows 环境可用 `docker-compose.yml;docker-compose.mysql-redis.yml`
+- `DNMP_EXT_HOST_IP`：扩展服务宿主机监听地址，默认 `127.0.0.1`，避免 MySQL 主从和 Redis Cluster 端口直接暴露到局域网。
+- `MYSQL_REPLICATION_VERSION`、`MYSQL_PRIMARY_*`、`MYSQL_REPLICA_*`、`MYSQL_REPLICATION_*`
 - `REDIS_VERSION`：单节点 Redis 镜像版本
 - `REDIS_CLUSTER_VERSION`、`REDIS_PASSWORD`、`REDIS_CLUSTER_*_PORT`、`REDIS_CLUSTER_REPLICAS`
 
@@ -154,44 +156,50 @@ $ scripts/restart-mysql-redis.sh
 ```
 
 说明：
-1. `mysql-replica-init` 会在主从实例初始化完成后自动建立复制关系。
-2. `redis-cluster-init` 会在 6 个 Redis 节点可用后自动执行 `redis-cli --cluster create`。
-3. `MYSQL_REPLICATION_VERSION` 独立控制主从镜像版本，不影响默认单节点 `mysql` 服务；当前示例使用 MySQL Community Server `9.7.1 LTS`。
-4. `REDIS_CLUSTER_VERSION` 独立控制集群节点镜像版本，不影响默认单节点 `redis` 服务。
-5. `scripts/restart-mysql-redis.sh` 会记录 `data/mysql-replication.version`。如果已有 MySQL 主从数据但版本标记缺失，脚本会拒绝猜测数据版本；请先用匹配现有数据的 `MYSQL_REPLICATION_VERSION` 启动一次并写入标记，或备份后重建本地测试数据。如果版本标记与目标版本不一致，会先停止执行，确认已备份并按官方升级路径处理后，可设置 `ALLOW_MYSQL_REPLICATION_DATA_UPGRADE=1` 继续。MySQL 8.0.34 这类非上一代 LTS 的数据目录不能直接挂载到 9.7.1 容器中升级。
-6. Redis Cluster 会把节点 ID、对外通告地址、端口和总线端口写入各节点的 `nodes.conf`。如果使用 Docker 默认动态 IP，网络重建后容器 IP 可能变化，旧 `nodes.conf`、集群 gossip 或客户端 `MOVED` 重定向仍指向旧地址，就容易出现 `CLUSTERDOWN` 或连接失败。
-7. 当前 Redis Cluster 在扩展编排文件中使用独立 Docker 网段和固定节点 IP，并配置 `cluster-announce-hostname`，让节点通告地址稳定；这些是内部拓扑，不放到 `.env` 的常规配置面。若手工修改扩展编排文件中的网段或节点 IP，应执行 `RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh` 清空本地 Redis Cluster 数据并重新建群。
-8. 如果你在 `docker-compose.yml` 中启用了单节点 `redis`，`scripts/restart-mysql-redis.sh` 会自动一起重启。
+1. `mysql-replication-init` 会在主从实例初始化完成后自动建立复制关系。
+2. 主库已有存量数据时，脚本不会自动克隆历史数据；请先用一致性备份把主库数据恢复到从库，再运行 `mysql-replication-init` 启用 GTID 复制。
+3. `redis-cluster-init` 会在 6 个 Redis 节点可用后自动执行 `redis-cli --cluster create`。
+4. `MYSQL_REPLICATION_VERSION` 独立控制主从镜像版本，不影响默认单节点 `mysql` 服务；当前示例使用 MySQL Community Server `9.7.1 LTS`。
+5. `REDIS_CLUSTER_VERSION` 独立控制集群节点镜像版本，不影响默认单节点 `redis` 服务。
+6. `scripts/restart-mysql-redis.sh` 会记录 `data/mysql-replication.version`。如果已有 MySQL 主从数据但版本标记缺失，脚本会拒绝猜测数据版本；请先用匹配现有数据的 `MYSQL_REPLICATION_VERSION` 启动一次并写入标记，或备份后重建本地测试数据。如果版本标记与目标版本不一致，会先停止执行，确认已备份并按官方升级路径处理后，可设置 `ALLOW_MYSQL_REPLICATION_DATA_UPGRADE=1` 继续。MySQL 8.0.34 这类非上一代 LTS 的数据目录不能直接挂载到 9.7.1 容器中升级。
+7. 如果旧版本已生成旧命名的 MySQL 复制数据目录，`scripts/restart-mysql-redis.sh` 会拒绝静默启动新空目录；请先备份并迁移到 `data/mysql-primary`、`data/mysql-replica`，或备份后重建本地测试数据。
+8. Redis Cluster 会把节点 ID、对外通告地址、端口和总线端口写入各节点的 `nodes.conf`。如果使用 Docker 默认动态 IP，网络重建后容器 IP 可能变化，旧 `nodes.conf`、集群 gossip 或客户端 `MOVED` 重定向仍指向旧地址，就容易出现 `CLUSTERDOWN` 或连接失败。
+9. 当前 Redis Cluster 在扩展编排文件中使用独立 Docker 网段和固定节点 IP，并配置 `cluster-announce-hostname`，让节点通告地址稳定；这些是内部拓扑，不放到 `.env` 的常规配置面。若手工修改扩展编排文件中的网段或节点 IP，应执行 `RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh` 清空本地 Redis Cluster 数据并重新建群。
+10. 如果你在 `docker-compose.yml` 中启用了单节点 `redis`，`scripts/restart-mysql-redis.sh` 会自动一起重启。
 
 ### 2.2 启用 CDC 与可观测性扩展
 CDC 与可观测性扩展不会影响默认 DNMP 服务，只在你显式通过 `-f docker-compose.cdc.yml`、`-f docker-compose.observability.yml` 或 `.env` 的 `COMPOSE_FILE` 引入时生效。
 
-本地 CDC 使用 `mysql-master` 作为 binlog 来源。默认单节点 `mysql` 配置中关闭了 binlog，不作为 Debezium 数据源。
+本地 CDC 使用 `mysql-primary` 作为 binlog 来源。默认单节点 `mysql` 配置中关闭了 binlog，不作为 Debezium 数据源。
 
 按需复制扩展编排文件：
 ```bash
-$ cp docker-compose.cluster.sample.yml docker-compose.cluster.yml
+$ cp docker-compose.mysql-redis.sample.yml docker-compose.mysql-redis.yml
 $ cp docker-compose.cdc.sample.yml docker-compose.cdc.yml
 $ cp docker-compose.observability.sample.yml docker-compose.observability.yml
 ```
 
 按需修改 `.env` 中以下变量：
-- `COMPOSE_FILE=docker-compose.yml:docker-compose.cluster.yml:docker-compose.cdc.yml:docker-compose.observability.yml`：启用 MySQL 主从、Kafka、Kafka Connect、Debezium、Kafka UI 和 Jaeger。Windows 环境可用分号分隔。
-- `KAFKA_VERSION`、`KAFKA_HOST_PORT`
+- `COMPOSE_FILE=docker-compose.yml:docker-compose.mysql-redis.yml:docker-compose.cdc.yml:docker-compose.observability.yml`：启用 MySQL 主从、Kafka、Kafka Connect、Debezium、Kafka UI 和 Jaeger。Windows 环境可用分号分隔。
+- `DNMP_EXT_HOST_IP`：扩展服务宿主机监听地址，默认 `127.0.0.1`，避免 Kafka Connect、Kafka UI 和 Jaeger 直接暴露到局域网。
+- `MYSQL_DEBEZIUM_USER`、`MYSQL_DEBEZIUM_PASSWORD`：Debezium Connector 使用的独立 MySQL 账号，不复用主从复制账号。
+- `KAFKA_VERSION`、`KAFKA_HOST_PORT`、`KAFKA_HOST_ADVERTISED_HOST`：宿主机访问 Kafka 时返回给客户端的地址，默认 `127.0.0.1`。
 - `DEBEZIUM_CONNECT_VERSION`、`KAFKA_CONNECT_*`：Debezium 3.x 镜像使用 `quay.io/debezium/connect`。
 - `KAFKA_UI_VERSION`、`KAFKA_UI_HOST_PORT`
 - `JAEGER_VERSION`、`JAEGER_OTLP_*`、`JAEGER_UI_HOST_PORT`
 
 启动命令示例：
 ```bash
-$ docker-compose up -d mysql-master mysql-slave mysql-replica-init kafka kafka-connect kafka-ui jaeger
+$ docker-compose up -d mysql-primary mysql-replica
+$ docker-compose up mysql-replication-init   # 等待主从复制和 CDC MySQL 账号初始化完成
+$ docker-compose up -d kafka kafka-connect kafka-ui jaeger
 ```
 
 注册 Debezium Connector：
 ```bash
 $ curl -i -X POST \
   -H 'Content-Type: application/json' \
-  --data @services/debezium/connectors/admin-mysql-source.json \
+  --data @services/debezium/connectors/admin-mysql-source.sample.json \
   http://127.0.0.1:8083/connectors
 ```
 
@@ -209,12 +217,16 @@ $ curl http://127.0.0.1:8083/connectors/admin-mysql-source/status
 - OTLP HTTP：`127.0.0.1:4318`
 
 说明：
-1. `services/debezium/connectors/admin-mysql-source.json` 只是本地开发示例，请按实际库名、表名和账号密码修改 `database.include.list`、`table.include.list`、`database.user`、`database.password`。
-2. `mysql-master` 初始化脚本会给 `MYSQL_REPLICATION_USER` 授予 Debezium 本地快照所需的 `SELECT`、`RELOAD`、`SHOW DATABASES`、`REPLICATION SLAVE`、`REPLICATION CLIENT` 权限。
-3. 本地 Kafka 默认分区数为 1，避免 Debezium schema history topic 和 Kafka Connect config topic 自动创建成多分区。
-4. `www/admin/etc/config.dnmp.sample.yaml` 中 Kafka 宿主机访问地址为 `127.0.0.1:29092`；如果 admin 在容器内运行，应改为 `kafka:9092`。
-5. 启用 admin trace 时，`www/admin/etc/config.dnmp.sample.yaml` 的 OTLP 宿主机访问地址可填 `127.0.0.1:4317`；如果 admin 在容器内运行，应填 `jaeger:4317`。
-6. `observability.otlp_endpoint` 属于启动期连接配置，修改后需要重启 admin。
+1. `services/debezium/connectors/admin-mysql-source.sample.json` 只是本地开发示例，请按实际库名、表名和账号密码修改 `database.include.list`、`table.include.list`、`database.user`、`database.password`。
+2. 示例 Connector 使用 `snapshot.mode=no_data`，只采集表结构并监听后续 binlog，不把历史存量数据写入 Kafka；同时关闭 delete tombstone 空消息。
+3. `MYSQL_REPLICATION_USER` 只用于 MySQL 主从复制；`MYSQL_DEBEZIUM_USER` 用于 Debezium 本地采集，并授予 `SELECT`、`RELOAD`、`SHOW DATABASES`、`REPLICATION SLAVE`、`REPLICATION CLIENT` 权限。
+4. 本地 Kafka 默认分区数为 1，避免 Debezium schema history topic 和 Kafka Connect config topic 自动创建成多分区。
+5. Kafka KRaft 数据持久化到 `data/kafka`，避免容器重建后丢失 Connect 内部 topic、Debezium schema history 和业务消息。
+6. 如果旧版本已经启动过 `kafka`，数据可能仍在 Docker 匿名卷中；切换到 `data/kafka` 前请先备份迁移旧 Kafka 数据，或接受本地 Kafka、Connect offset 和 Connector 状态重新初始化。
+7. 如果把 `DNMP_EXT_HOST_IP` 改为非本机地址供远程客户端连接，也要同步把 `KAFKA_HOST_ADVERTISED_HOST` 改成远程客户端可访问的宿主机地址。
+8. `www/admin/etc/config.dnmp.sample.yaml` 中 Kafka 宿主机访问地址为 `127.0.0.1:29092`；如果 admin 在容器内运行，应改为 `kafka:9092`。
+9. 启用 admin trace 时，`www/admin/etc/config.dnmp.sample.yaml` 的 OTLP 宿主机访问地址可填 `127.0.0.1:4317`；如果 admin 在容器内运行，应填 `jaeger:4317`。
+10. `observability.otlp_endpoint` 属于启动期连接配置，修改后需要重启 admin。
 
 ## 3.PHP和扩展
 ### 3.1 切换Nginx使用的PHP版本
@@ -498,19 +510,23 @@ $ docker-compose up                         # 创建并且启动所有容器
 $ docker-compose up -d                      # 创建并且后台运行方式启动所有容器
 $ docker-compose up nginx php mysql         # 创建并且启动nginx、php、mysql的多个容器
 $ docker-compose up -d nginx php  mysql     # 创建并且已后台运行的方式启动nginx、php、mysql容器
-$ docker-compose up -d mysql-master mysql-slave mysql-replica-init
-                                             # .env 启用 COMPOSE_FILE 后启动 MySQL 主从
-$ docker-compose up -d redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006 redis-cluster-init
-                                             # .env 启用 COMPOSE_FILE 后启动 Redis Cluster 节点
-$ scripts/restart-mysql-redis.sh            # 重启 MySQL 主从、单节点 Redis（如已启用）和 Redis Cluster
+$ docker-compose up -d mysql-primary mysql-replica
+$ docker-compose up mysql-replication-init   # .env 启用 COMPOSE_FILE 后启动 MySQL 主从，并等待复制初始化完成
+$ docker-compose up -d redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006
+$ docker-compose up redis-cluster-init       # .env 启用 COMPOSE_FILE 后启动 Redis Cluster 节点，并等待建群完成
+$ docker-compose up -d kafka kafka-connect kafka-ui jaeger
+                                             # .env 启用 COMPOSE_FILE 后启动 CDC 与可观测性扩展
+$ scripts/restart-mysql-redis.sh            # 一键重启 MySQL 主从、单节点 Redis（如已启用）和 Redis Cluster，并等待初始化完成
 $ RESET_REDIS_CLUSTER=1 scripts/restart-mysql-redis.sh
                                              # 清空本地 Redis Cluster 数据并重新建群
 
 
 $ docker-compose start php                  # 启动服务
 $ docker-compose stop php                   # 停止服务
-$ docker-compose stop mysql-replica-init mysql-master mysql-slave redis-cluster-init redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006
+$ docker-compose stop mysql-replication-init mysql-primary mysql-replica redis-cluster-init redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cluster-7004 redis-cluster-7005 redis-cluster-7006
                                              # .env 启用 COMPOSE_FILE 后停止 MySQL 主从和 Redis Cluster
+$ docker-compose stop kafka-ui kafka-connect kafka jaeger
+                                             # .env 启用 COMPOSE_FILE 后停止 CDC 与可观测性扩展
 $ docker-compose restart php                # 重启服务
 $ docker-compose build php                  # 构建或者重新构建服务
 
@@ -588,7 +604,7 @@ ini_set('display_errors', 'on');
 3. 重启PHP-FPM容器。
 
 ### 5.3 MySQL日志
-因为MySQL容器中的MySQL使用的是`mysql`用户启动，它无法自行在`/var/log`下的增加日志文件。所以，我们把MySQL的日志放在宿主机挂载目录中，对应容器中的`/var/log/mysql/`目录。单机模式默认是`./logs/mysql`，主从模式分别是`./logs/mysql-master`和`./logs/mysql-slave`。
+因为MySQL容器中的MySQL使用的是`mysql`用户启动，它无法自行在`/var/log`下的增加日志文件。所以，我们把MySQL的日志放在宿主机挂载目录中，对应容器中的`/var/log/mysql/`目录。单机模式默认是`./logs/mysql`，主从模式分别是`./logs/mysql-primary`和`./logs/mysql-replica`。
 ```bash
 slow-query-log-file     = /var/log/mysql/mysql.slow.log
 log-error               = /var/log/mysql/mysql.error.log
@@ -607,7 +623,7 @@ http://localhost:8080
 ```
 
 MySQL连接信息：
-- host：`mysql`、`mysql-master` 或 `mysql-slave`（本项目的MySQL容器网络名）
+- host：`mysql`、`mysql-primary` 或 `mysql-replica`（本项目的MySQL容器网络名）
 - port：`3306`
 - username：（手动在phpmyadmin界面输入）
 - password：（手动在phpmyadmin界面输入）
@@ -628,6 +644,10 @@ Redis连接信息如下：
 1. 在php.ini中关闭XDebug调试
 2. 增强MySQL数据库访问的安全策略
 3. 增强redis访问的安全策略
+4. MySQL 主从、Redis Cluster、Kafka、Kafka Connect、Kafka UI 和 Jaeger 示例默认面向本地开发，端口默认只绑定 `127.0.0.1`；生产环境不要直接暴露到公网。
+5. 生产环境应替换所有默认密码，限制 `MYSQL_ROOT_HOST`、`MYSQL_REPLICATION_USER`、`MYSQL_DEBEZIUM_USER`、Redis 密码和端口访问来源；如确需远程访问，请显式调整 `DNMP_EXT_HOST_IP` 并配合防火墙、内网安全组或反向代理鉴权保护 Kafka Connect、Kafka UI 和 Jaeger UI。
+6. Kafka 示例使用 PLAINTEXT 单节点 KRaft，仅适合本地 CDC 验证；生产环境应启用多 broker、高可用副本、ACL/SASL/TLS 和独立的 Connect 内部 topic。
+7. Jaeger all-in-one 示例仅适合本地调试；生产环境应使用独立存储、采样策略、鉴权入口和资源限额。
 
 
 ## 8 常见问题
@@ -655,8 +675,8 @@ $redis->connect('redis', 6379);
 如果启用了 MySQL 主从和 Redis Cluster，则可以这样连接：
 ```php
 // 连接 MySQL 主库 / 从库
-$master = new PDO('mysql:host=mysql-master;dbname=mysql', 'root', '123456');
-$slave = new PDO('mysql:host=mysql-slave;dbname=mysql', 'root', '123456');
+$primary = new PDO('mysql:host=mysql-primary;dbname=mysql', 'root', '123456');
+$replica = new PDO('mysql:host=mysql-replica;dbname=mysql', 'root', '123456');
 
 // 连接 Redis Cluster
 $cluster = new RedisCluster(NULL, [

@@ -5,9 +5,9 @@ services:
     image: jaegertracing/all-in-one:${JAEGER_VERSION}
     container_name: jaeger
     ports:
-      - "${JAEGER_OTLP_GRPC_HOST_PORT}:4317"
-      - "${JAEGER_OTLP_HTTP_HOST_PORT}:4318"
-      - "${JAEGER_UI_HOST_PORT}:16686"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${JAEGER_OTLP_GRPC_HOST_PORT}:4317"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${JAEGER_OTLP_HTTP_HOST_PORT}:4318"
+      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${JAEGER_UI_HOST_PORT}:16686"
     restart: always
     environment:
       TZ: "$TZ"

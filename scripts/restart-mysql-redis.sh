@@ -3,10 +3,10 @@ set -eu
 
 cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
 
-if [ ! -f docker-compose.yml ] || [ ! -f docker-compose.cluster.yml ]; then
-  echo "Please copy docker-compose.sample.yml and docker-compose.cluster.sample.yml before restart." >&2
+if [ ! -f docker-compose.yml ] || [ ! -f docker-compose.mysql-redis.yml ]; then
+  echo "Please copy docker-compose.sample.yml and docker-compose.mysql-redis.sample.yml before restart." >&2
   echo "  cp docker-compose.sample.yml docker-compose.yml" >&2
-  echo "  cp docker-compose.cluster.sample.yml docker-compose.cluster.yml" >&2
+  echo "  cp docker-compose.mysql-redis.sample.yml docker-compose.mysql-redis.yml" >&2
   exit 1
 fi
 
@@ -19,7 +19,7 @@ compose() {
 }
 
 dc() {
-  compose -f docker-compose.yml -f docker-compose.cluster.yml "$@"
+  compose -f docker-compose.yml -f docker-compose.mysql-redis.yml "$@"
 }
 
 service_exists() {
@@ -28,7 +28,7 @@ service_exists() {
 
 mysql_replication_version() {
   dc config | awk '
-    $1 == "mysql-master:" { in_mysql = 1; next }
+    $1 == "mysql-primary:" { in_mysql = 1; next }
     in_mysql && $1 == "image:" {
       image = $2
       sub(/^mysql:/, "", image)
@@ -39,7 +39,21 @@ mysql_replication_version() {
 }
 
 mysql_replication_data_exists() {
-  [ -f data/mysql-master/auto.cnf ] || [ -f data/mysql-slave/auto.cnf ]
+  [ -f data/mysql-primary/auto.cnf ] || [ -f data/mysql-replica/auto.cnf ]
+}
+
+legacy_mysql_replication_data_exists() {
+  for auto_cnf in data/mysql-*/auto.cnf; do
+    [ -e "${auto_cnf}" ] || continue
+    case "${auto_cnf}" in
+      data/mysql-primary/* | data/mysql-replica/*)
+        continue
+        ;;
+    esac
+    return 0
+  done
+
+  return 1
 }
 
 ensure_mysql_replication_data_safe() {
@@ -48,7 +62,13 @@ ensure_mysql_replication_data_safe() {
   marked_version=""
 
   if [ -z "${version}" ]; then
-    echo "Unable to resolve mysql-master image version from docker compose config." >&2
+    echo "Unable to resolve mysql-primary image version from docker compose config." >&2
+    exit 1
+  fi
+
+  if legacy_mysql_replication_data_exists && ! mysql_replication_data_exists; then
+    echo "Legacy MySQL replication data directories detected, but current compose expects data/mysql-primary and data/mysql-replica." >&2
+    echo "Back up and move the old primary/replica data directories to the new names, or rebuild local test data after backup." >&2
     exit 1
   fi
 
@@ -115,16 +135,16 @@ cluster_nodes="redis-cluster-7001 redis-cluster-7002 redis-cluster-7003 redis-cl
 
 ensure_mysql_replication_data_safe
 
-dc stop mysql-replica-init mysql-master mysql-slave ${redis_service} redis-cluster-init ${cluster_nodes} >/dev/null 2>&1 || true
-dc rm -f mysql-replica-init redis-cluster-init >/dev/null 2>&1 || true
+dc stop mysql-replication-init mysql-primary mysql-replica ${redis_service} redis-cluster-init ${cluster_nodes} >/dev/null 2>&1 || true
+dc rm -f mysql-replication-init redis-cluster-init >/dev/null 2>&1 || true
 
 if [ "${RESET_REDIS_CLUSTER:-0}" = "1" ]; then
   rm -rf data/redis-cluster/7001/* data/redis-cluster/7002/* data/redis-cluster/7003/* \
     data/redis-cluster/7004/* data/redis-cluster/7005/* data/redis-cluster/7006/*
 fi
 
-dc up -d mysql-master mysql-slave ${redis_service}
-run_init_service mysql-replica-init
+dc up -d mysql-primary mysql-replica ${redis_service}
+run_init_service mysql-replication-init
 write_mysql_replication_version_marker
 dc up -d ${cluster_nodes}
 run_init_service redis-cluster-init
