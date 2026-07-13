@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vue Vben 功能交付"
+  short_description: "端到端交付 Vue/Vben 页面、路由、表格表单、状态与安全交互。"
+  default_prompt: "使用 $vue-vben-feature-delivery 端到端实现这个 vben 前端功能。"

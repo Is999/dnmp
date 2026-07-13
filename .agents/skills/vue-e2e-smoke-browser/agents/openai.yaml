@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vue 浏览器冒烟"
+  short_description: "通过浏览器验证 Vue/Vben 路由、表单、表格、权限与响应式交互流程。"
+  default_prompt: "使用 $vue-e2e-smoke-browser 在浏览器里冒烟验证这个前端改动。"

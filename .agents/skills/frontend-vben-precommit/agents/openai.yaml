@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vben 提交检查"
+  short_description: "复现并修复 Vben 的 typecheck、lint、格式化与提交钩子失败。"
+  default_prompt: "使用 $frontend-vben-precommit 复现并修复这个 vben 前端 pre-commit 失败。"

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vue Monorepo CI 护栏"
+  short_description: "修复 pnpm、lockfile、CI 和 hook 失败。"
+  default_prompt: "使用 $vue-monorepo-ci-guard 排查这个前端 monorepo 验证失败。"

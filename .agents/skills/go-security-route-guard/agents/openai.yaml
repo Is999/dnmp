@@ -1,0 +1,4 @@
+interface:
+  display_name: "Go 路由安全护栏"
+  short_description: "复核 Go 鉴权路由、JWT 会话、MFA、权限、签名与加密契约。"
+  default_prompt: "使用 $go-security-route-guard 复核这个路由安全改动。"

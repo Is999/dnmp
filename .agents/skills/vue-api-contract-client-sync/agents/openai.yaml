@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vue API 契约同步"
+  short_description: "同步前端 wrapper、类型、权限和 i18n。"
+  default_prompt: "使用 $vue-api-contract-client-sync 对齐这个前端 API client 和后端契约。"

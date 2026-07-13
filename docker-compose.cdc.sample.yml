@@ -1,14 +1,43 @@
 version: "3"
 
 services:
+  kafka-data-check:
+    image: apache/kafka:${KAFKA_VERSION}
+    container_name: kafka-data-check
+    volumes:
+      - ${DATA_DIR}/kafka:/var/lib/kafka/data:rw
+    entrypoint: ["/bin/bash", "-ec"]
+    command:
+      - |
+        invalid_path=""
+        while IFS= read -r -d "" path; do
+          if [ ! -w "$${path}" ] || { [ -d "$${path}" ] && [ ! -x "$${path}" ]; }; then
+            invalid_path="$${path}"
+            break
+          fi
+        done < <(find /var/lib/kafka/data -print0)
+        if [ -n "$${invalid_path}" ]; then
+          echo "Kafka data must be writable by the kafka container user: $${invalid_path}" >&2
+          exit 1
+        fi
+    restart: "no"
+
   kafka:
     image: apache/kafka:${KAFKA_VERSION}
     container_name: kafka
+    depends_on:
+      kafka-data-check:
+        condition: service_completed_successfully
     ports:
       - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${KAFKA_HOST_PORT}:29092"
     volumes:
       - ${DATA_DIR}/kafka:/var/lib/kafka/data:rw
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       TZ: "$TZ"
       KAFKA_LOG_DIRS: /var/lib/kafka/data
@@ -29,7 +58,8 @@ services:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
       interval: 10s
       timeout: 5s
-      retries: 30
+      retries: 3
+      start_period: 30s
     networks:
       - default
 
@@ -37,12 +67,20 @@ services:
     image: quay.io/debezium/connect:${DEBEZIUM_CONNECT_VERSION}
     container_name: kafka-connect
     depends_on:
-      - kafka
+      kafka:
+        condition: service_healthy
     ports:
-      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${KAFKA_CONNECT_HOST_PORT}:8083"
+      - "${DNMP_ADMIN_HOST_IP:-127.0.0.1}:${KAFKA_CONNECT_HOST_PORT}:8083"
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       TZ: "$TZ"
+      MYSQL_DEBEZIUM_USER: "${MYSQL_DEBEZIUM_USER:?MYSQL_DEBEZIUM_USER must be set}"
+      MYSQL_DEBEZIUM_PASSWORD: "${MYSQL_DEBEZIUM_PASSWORD:?MYSQL_DEBEZIUM_PASSWORD must be set}"
       BOOTSTRAP_SERVERS: kafka:9092
       GROUP_ID: "${KAFKA_CONNECT_GROUP_ID}"
       CONFIG_STORAGE_TOPIC: "${KAFKA_CONNECT_CONFIG_TOPIC}"
@@ -55,28 +93,45 @@ services:
       VALUE_CONVERTER: org.apache.kafka.connect.json.JsonConverter
       CONNECT_KEY_CONVERTER_SCHEMAS_ENABLE: "false"
       CONNECT_VALUE_CONVERTER_SCHEMAS_ENABLE: "false"
+      CONNECT_CONFIG_PROVIDERS: env
+      CONNECT_CONFIG_PROVIDERS_ENV_CLASS: org.apache.kafka.common.config.provider.EnvVarConfigProvider
+      CONNECT_CONFIG_PROVIDERS_ENV_PARAM_ALLOWLIST_PATTERN: "^MYSQL_DEBEZIUM_(USER|PASSWORD)$$"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/connectors >/dev/null"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8083/connectors >/dev/null && timeout 2 bash -c '</dev/tcp/kafka/9092'"]
       interval: 10s
       timeout: 5s
-      retries: 30
+      retries: 3
+      start_period: 40s
     networks:
       - default
 
   kafka-ui:
-    image: provectuslabs/kafka-ui:${KAFKA_UI_VERSION}
+    image: ghcr.io/kafbat/kafka-ui:${KAFKA_UI_VERSION}
     container_name: kafka-ui
     depends_on:
-      - kafka
-      - kafka-connect
+      kafka:
+        condition: service_healthy
+      kafka-connect:
+        condition: service_healthy
     ports:
-      - "${DNMP_EXT_HOST_IP:-127.0.0.1}:${KAFKA_UI_HOST_PORT}:8080"
+      - "${DNMP_ADMIN_HOST_IP:-127.0.0.1}:${KAFKA_UI_HOST_PORT}:8080"
     restart: always
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       TZ: "$TZ"
       KAFKA_CLUSTERS_0_NAME: dnmp
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
       KAFKA_CLUSTERS_0_KAFKACONNECT_0_NAME: debezium
       KAFKA_CLUSTERS_0_KAFKACONNECT_0_ADDRESS: http://kafka-connect:8083
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/api/clusters/dnmp/brokers"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     networks:
       - default

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Vue 权限状态审计"
+  short_description: "审计 Vue/Vben 路由、菜单、按钮权限、MFA 与登录会话状态。"
+  default_prompt: "使用 $vue-permission-state-audit 复核这个前端权限或安全流程。"
