@@ -1,4 +1,8 @@
+# Codex 技能加载器读取下列界面元数据；它们只控制技能展示和默认任务提示，不替代 SKILL.md 执行规则。
 interface:
+  # Codex 技能列表向用户展示的中文名称。
   display_name: "实现闭环复核"
+  # Codex 技能列表用于区分适用边界的单行说明。
   short_description: "沿真实调用链检查需求实现、命名、同步面、测试及半成品风险。"
-  default_prompt: "使用 $implementation-closure-review 复核这次实现是否沿真实调用链闭合所有需求项。"
+  # 用户从界面启动该技能时预填的任务指令，必须显式引用当前 Skill 名称。
+  default_prompt: "使用 $implementation-closure-review 按任务类型核对：功能检查入口、副作用与失败终态，规范、提示词和 Skill 检查事实、引用与执行决策；均核对最后验证，并按公共规范检查工程质量、初级可维护性及注释不足与过度，不强造生产链路或越权整改。"
